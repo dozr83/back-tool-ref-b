@@ -2,7 +2,6 @@ package backtool.service;
 
 import backtool.service.CompareBuilder;
 import backtool.service.DiffResult;
-import backtool.service.DigestCalculator;
 import backtool.util.LinkedHashMapUtil;
 import backtool.util.Md5Util;
 import java.util.logging.Level;
@@ -59,7 +58,7 @@ public class DirVersionProcessor {
         });
 
         // 2. 当前版本
-        Map<String, String> currentMd5Map = DigestCalculator.getDirMd5RelativePathMap(checkDirStr);
+        Map<String, String> currentMd5Map = DirMd5Digest.getRelativePathMap(checkDirStr);
         LinkedHashMap<String, List<String>> currentRevertMap = LinkedHashMapUtil.convert2ValueMap(currentMd5Map);
 
         // 使用 CompareBuilder 进行按值比对

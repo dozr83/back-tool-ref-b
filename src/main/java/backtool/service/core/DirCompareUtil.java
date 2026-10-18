@@ -1,6 +1,8 @@
 package backtool.service.core;
 
-import backtool.service.DigestCalculator;
+import backtool.service.DirDigestComparer;
+import backtool.service.DirLenDigest;
+import backtool.service.DirMd5Digest;
 import backtool.util.FileUtil;
 import backtool.util.LinkedHashMapUtil;
 
@@ -17,7 +19,7 @@ public class DirCompareUtil {
 
         /**第一步，使用Length初筛**/
         //取得文件长度的Map
-        LinkedHashMap<File, String> fileLengthMapAll = DigestCalculator.getDirLenFileMap(leftDirStr);
+        LinkedHashMap<File, String> fileLengthMapAll = DirLenDigest.getFileMap(leftDirStr);
         //转换Map：Key:文件长度，value：长度相等的文件列表
         LinkedHashMap<String, List<File>> lengthGroupFileMap_len = LinkedHashMapUtil.convert2ValueMap(fileLengthMapAll);
         //从ValueMap中查找重复文件
@@ -28,7 +30,7 @@ public class DirCompareUtil {
 
         /**第二步，二次MD5检验**/
         //长度相等的一堆数据，生成新的反相Map
-        LinkedHashMap<String, List<File>> md5RevertMap_md5 = DigestCalculator.groupFilesByMd5(doubleFilesByLen);
+        LinkedHashMap<String, List<File>> md5RevertMap_md5 = DirMd5Digest.groupFilesByMd5(doubleFilesByLen);
         //删选MD5相等的
         LinkedHashMapUtil.filterLinkedHashMap(md5RevertMap_md5, e -> e.getValue().size() > 1)
                 .forEach((md5, files) -> result.addDuplicate(files));
@@ -38,8 +40,8 @@ public class DirCompareUtil {
     //    仅处理【两个目录】，不看路径，只查找两边内容相同的文件
     public static TwoDirSameResult compareTwoByContent(String leftDirStr, String rightDirStr) {
         TwoDirSameResult result = new TwoDirSameResult();
-        LinkedHashMap<File, String> leftMd5Map_file = DigestCalculator.getDirMd5FileMap(leftDirStr);
-        LinkedHashMap<File, String> rightMd5Map_file = DigestCalculator.getDirMd5FileMap(rightDirStr);
+        LinkedHashMap<File, String> leftMd5Map_file = DirMd5Digest.getFileMap(leftDirStr);
+        LinkedHashMap<File, String> rightMd5Map_file = DirMd5Digest.getFileMap(rightDirStr);
         LinkedHashMap<String, List<File>> leftGroupFileMap_md5 = LinkedHashMapUtil.convert2ValueMap(leftMd5Map_file);
         LinkedHashMap<String, List<File>> rightGroupFileMap_md5 = LinkedHashMapUtil.convert2ValueMap(rightMd5Map_file);
         leftGroupFileMap_md5.forEach((md5, leftFiles) -> {
@@ -62,8 +64,8 @@ public class DirCompareUtil {
         TwoDirPathResult compareResult = new TwoDirPathResult();
 
         //获取左右文件夹的文件MD5映射
-        LinkedHashMap<File, String> leftMd5Map_file = DigestCalculator.getDirMd5FileMap(leftDirStr);
-        LinkedHashMap<File, String> rightMd5Map_file = DigestCalculator.getDirMd5FileMap(rightDirStr);
+        LinkedHashMap<File, String> leftMd5Map_file = DirMd5Digest.getFileMap(leftDirStr);
+        LinkedHashMap<File, String> rightMd5Map_file = DirMd5Digest.getFileMap(rightDirStr);
 
         //构建路径到文件和MD5的映射，以相对路径为主键
         LinkedHashMap<String, File> leftFileMap_path = new LinkedHashMap<>();
@@ -82,8 +84,8 @@ public class DirCompareUtil {
             rightMd5Map_path.put(path, md5);
         });
 
-        // 直接调用 DigestCalculator 按路径比对
-        DigestCalculator.PathDiffResult diffResult = DigestCalculator.compareByPath(leftMd5Map_path, rightMd5Map_path);
+        // 按路径比对
+        DirDigestComparer.PathDiffResult diffResult = DirDigestComparer.compareByPath(leftMd5Map_path, rightMd5Map_path);
 
         // 组装结果
         diffResult.samePaths.forEach(path -> compareResult.sameFiles.add(leftFileMap_path.get(path)));
