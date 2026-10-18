@@ -12,35 +12,131 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 public class DigestCalculator {
     private static final Logger logger = Logger.getLogger(DigestCalculator.class.getName());
-    public enum DigestType {
-        MD5 {
-            @Override
-            public String calculate(File file) {
-                return Md5Util.getMD5(file);
-            }
-        }, LEN {
-            @Override
-            public String calculate(File file) {
-                return String.valueOf(file.length());
-            }
-        }, LEN_MD5 {
-            @Override
-            public String calculate(File file) {
-                return Md5Util.getMD5(file) + "," + file.length();
-            }
-        };
 
-        public abstract String calculate(File file);
+    // ============== 公共能力：目录遍历 + 过滤 + 计算 ==============
+
+    /**
+     * 遍历目录，对每个文件应用 calculator，返回 File -> 摘要值 的有序 Map。
+     * 目录过滤（dirFilter）和文件过滤（fileFilter）分离，分别在不同阶段生效。
+     * 这是 MD5 / LEN / LEN_MD5 三种计算复用的公共组件。
+     */
+    private static LinkedHashMap<File, String> walkAndCalculate(File baseDir, FilterRules rules, Function<File, String> calculator) {
+        LinkedHashMap<File, String> resultMap = new LinkedHashMap<>();
+        Predicate<File> dirFilter = rules.dirPredicate();
+        Predicate<File> fileFilter = rules.filePredicate();
+
+        try {
+            Files.walkFileTree(baseDir.toPath(), new SimpleFileVisitor<>() {
+                @Override
+                public java.nio.file.FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    // 目录过滤：命中则跳过整棵子树（如 .Trashes / .fseventsd / .idea / .git）
+                    if (dirFilter != null && dirFilter.test(dir.toFile())) {
+                        return java.nio.file.FileVisitResult.SKIP_SUBTREE;
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFile(Path path, BasicFileAttributes attrs) {
+                    // 文件过滤：命中则跳过该文件（如 .DS_Store / ._ 前缀 / iml 后缀）
+                    if (fileFilter != null && fileFilter.test(path.toFile())) {
+                        return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+                    File file = path.toFile();
+                    resultMap.put(file, calculator.apply(file));
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFileFailed(Path path, IOException exc) {
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "遍历目录计算文件摘要失败: baseDir=" + baseDir.getAbsolutePath(), e);
+            throw new RuntimeException("遍历目录计算文件摘要失败: " + baseDir.getAbsolutePath(), e);
+        }
+
+        return resultMap;
     }
+
+    /**
+     * 将 File -> 摘要值 的 Map 转换为 相对路径 -> 摘要值 的 Map。
+     * 公共路径转换组件，三种计算复用。
+     */
+    private static LinkedHashMap<String, String> toRelativePath(LinkedHashMap<File, String> fileMap, String baseDirStr) {
+        return LinkedHashMapUtil.alterKey(fileMap,
+                file -> FileUtil.getSubPathUnix(file.getAbsolutePath(), baseDirStr));
+    }
+
+    // ============== MD5 计算 ==============
+
+    public static LinkedHashMap<File, String> getDirMd5FileMap(String baseDirStr) {
+        return getDirMd5FileMap(baseDirStr, FilterRules.DEFAULT);
+    }
+
+    public static LinkedHashMap<File, String> getDirMd5FileMap(String baseDirStr, FilterRules rules) {
+        return walkAndCalculate(new File(baseDirStr), rules, Md5Util::getMD5);
+    }
+
+    public static LinkedHashMap<String, String> getDirMd5RelativePathMap(String baseDirStr) {
+        return getDirMd5RelativePathMap(baseDirStr, FilterRules.DEFAULT);
+    }
+
+    public static LinkedHashMap<String, String> getDirMd5RelativePathMap(String baseDirStr, FilterRules rules) {
+        return toRelativePath(getDirMd5FileMap(baseDirStr, rules), baseDirStr);
+    }
+
+    // ============== 长度（LEN）计算 ==============
+
+    public static LinkedHashMap<File, String> getDirLenFileMap(String baseDirStr) {
+        return getDirLenFileMap(baseDirStr, FilterRules.DEFAULT);
+    }
+
+    public static LinkedHashMap<File, String> getDirLenFileMap(String baseDirStr, FilterRules rules) {
+        return walkAndCalculate(new File(baseDirStr), rules, file -> String.valueOf(file.length()));
+    }
+
+    public static LinkedHashMap<String, String> getDirLenRelativePathMap(String baseDirStr) {
+        return getDirLenRelativePathMap(baseDirStr, FilterRules.DEFAULT);
+    }
+
+    public static LinkedHashMap<String, String> getDirLenRelativePathMap(String baseDirStr, FilterRules rules) {
+        return toRelativePath(getDirLenFileMap(baseDirStr, rules), baseDirStr);
+    }
+
+    // ============== 长度+MD5（LEN_MD5）计算 ==============
+
+    public static LinkedHashMap<File, String> getDirLenMd5FileMap(String baseDirStr) {
+        return getDirLenMd5FileMap(baseDirStr, FilterRules.DEFAULT);
+    }
+
+    public static LinkedHashMap<File, String> getDirLenMd5FileMap(String baseDirStr, FilterRules rules) {
+        return walkAndCalculate(new File(baseDirStr), rules,
+                file -> Md5Util.getMD5(file) + "," + file.length());
+    }
+
+    public static LinkedHashMap<String, String> getDirLenMd5RelativePathMap(String baseDirStr) {
+        return getDirLenMd5RelativePathMap(baseDirStr, FilterRules.DEFAULT);
+    }
+
+    public static LinkedHashMap<String, String> getDirLenMd5RelativePathMap(String baseDirStr, FilterRules rules) {
+        return toRelativePath(getDirLenMd5FileMap(baseDirStr, rules), baseDirStr);
+    }
+
+    // ============== 按 MD5 分组 ==============
 
     public static LinkedHashMap<String, List<File>> groupFilesByMd5(List<File> files) {
         LinkedHashMap<String, List<File>> md5RevertMap_md5 = new LinkedHashMap<>();
@@ -52,66 +148,7 @@ public class DigestCalculator {
         return md5RevertMap_md5;
     }
 
-    //    @Deprecated
-//    public static LinkedHashMap<String, String> getDirDigestMap(String checkBaseDirStr, DigestType digestType, Predicate<File> noNeedCalMd5FileFilter) {
-//        LinkedHashMap<File, String> digestFileMap = getDirDigestFileMap(checkBaseDirStr, digestType, noNeedCalMd5FileFilter);
-//        return LinkedHashMapUtil.alterKey(digestFileMap, file -> FilenameUtil.getSubPathUnix(file.getAbsolutePath(), checkBaseDirStr));
-//    }
-    public static LinkedHashMap<String, String> getDirDigestRelativePathMap(DigestConfig config) {
-        LinkedHashMap<File, String> digestFileMap = getDirDigestFileMap(config);
-        return LinkedHashMapUtil.alterKey(digestFileMap,
-                file -> FileUtil.getSubPathUnix(file.getAbsolutePath(), config.getBaseDir().getAbsolutePath()));
-    }
-
-
-//    public static LinkedHashMap<File, String> getDirDigestFileMap(String checkBaseDirStr, DigestType digestType, Predicate<File> noNeedCalMd5FileFilter) {
-//        return getDirDigestFileMap(new File(checkBaseDirStr), digestType, noNeedCalMd5FileFilter);
-//    }
-
-
-    public static LinkedHashMap<File, String> getDirDigestFileMap(DigestConfig config) {
-        LinkedHashMap<File, String> md5FileMap = new LinkedHashMap<>();
-        File checkBaseDir = config.getBaseDir();
-        DigestType digestType = config.getDigestType();
-        // 目录过滤和文件过滤分离，分别在不同阶段生效，职责清晰
-        Predicate<File> dirFilter = config.getDirFilter();
-        Predicate<File> fileFilter = config.getFileFilter();
-
-        // 原有遍历逻辑 100% 保留
-        try {
-            Files.walkFileTree(checkBaseDir.toPath(), new java.nio.file.SimpleFileVisitor<Path>() {
-                @Override
-                public java.nio.file.FileVisitResult preVisitDirectory(Path dir, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    // 目录过滤：命中则跳过整棵子树（如 .Trashes / .fseventsd / .idea / .git）
-                    if (dirFilter != null && dirFilter.test(dir.toFile())) {
-                        return java.nio.file.FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return java.nio.file.FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public java.nio.file.FileVisitResult visitFile(Path path, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    // 文件过滤：命中则跳过该文件（如 .DS_Store / ._ 前缀 / iml 后缀）
-                    if (fileFilter != null && fileFilter.test(path.toFile())) {
-                        return java.nio.file.FileVisitResult.CONTINUE;
-                    }
-                    File file = path.toFile();
-                    md5FileMap.put(file, digestType.calculate(file));
-                    return java.nio.file.FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public java.nio.file.FileVisitResult visitFileFailed(Path path, IOException exc) {
-                    return java.nio.file.FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "遍历目录计算文件摘要失败: baseDir=" + checkBaseDir.getAbsolutePath(), e);
-            throw new RuntimeException("遍历目录计算文件摘要失败: " + checkBaseDir.getAbsolutePath(), e);
-        }
-
-        return md5FileMap;
-    }
+    // ============== 按路径比对 ==============
 
     /**
      * 按路径比对两个 Map，分类为 4 类（保持插入顺序）
@@ -155,6 +192,8 @@ public class DigestCalculator {
 
         return result;
     }
+
+    // ============== 清单读写 ==============
 
     /**
      * 读取清单文件，返回 LinkedHashMap (保持文件内顺序)
@@ -223,5 +262,3 @@ public class DigestCalculator {
     }
 
 }
-
-

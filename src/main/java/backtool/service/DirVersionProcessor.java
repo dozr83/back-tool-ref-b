@@ -59,12 +59,7 @@ public class DirVersionProcessor {
         });
 
         // 2. 当前版本
-        Map<String, String> currentMd5Map = DigestCalculator.getDirDigestRelativePathMap(
-                DigestConfig.builder()
-                        .baseDir(checkDirStr)
-                        .digestType(DigestCalculator.DigestType.MD5)
-                        .build()
-        );
+        Map<String, String> currentMd5Map = DigestCalculator.getDirMd5RelativePathMap(checkDirStr);
         LinkedHashMap<String, List<String>> currentRevertMap = LinkedHashMapUtil.convert2ValueMap(currentMd5Map);
 
         // 使用 CompareBuilder 进行按值比对

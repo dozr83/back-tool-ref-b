@@ -5,7 +5,7 @@
 
     <modelVersion>4.0.0</modelVersion>
     <groupId>dozr83</groupId>
-    <artifactId>back-tool</artifactId>
+    <artifactId>back-tool-ref-b</artifactId>
     <version>0.1.5f-SNAPSHOT</version>
 
     <properties>
@@ -182,7 +182,7 @@
                                     <executable>jpackage</executable>
                                     <arguments>
                                         <argument>--name</argument>
-                                        <argument>BackTool</argument>
+                                        <argument>BackToolRefB</argument>
                                         <argument>--main-class</argument>
                                         <argument>${mainClass}</argument>
                                         <argument>--main-jar</argument>
